@@ -66,7 +66,7 @@ class SQLiteDB:
                 if conditions:
                     sql += f" {conditions}"
                 records = pd.read_sql_query(sql, connection)
-                return records
+                return records.iloc[::-1].reset_index(drop=True) # Reverse
         except Exception as e:
             self.handle_error(e, "reading records from table")
             return None
@@ -184,7 +184,10 @@ class SQLiteDB:
         except Exception as e:
             self.handle_error(e, "getting last date from table")
             return None
-
+        
+        def run_query(self, query: str) -> pd.DataFrame:
+            with sq.connect(self.database_path) as conn:
+                return pd.read_sql_query(query, conn)
 # Example usage:
 # db = SQLiteDB("C:/Users/Doing/University of Central Florida/UCF_Photovoltaics_GRP - module_databases/Complete_Dataset.db")
 # db.read_records("module-metadata")
