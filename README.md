@@ -1,6 +1,6 @@
 # 🔬 PVMCF Data Explorer
 
-A modular Shiny for Python web application for visualizing and analyzing photovoltaic (PV) module measurement data.
+A modular Python web application for visualizing and analyzing photovoltaic (PV) module measurement data at the Photovoltaics Module Charecterization Facility.
 
 ---
 
