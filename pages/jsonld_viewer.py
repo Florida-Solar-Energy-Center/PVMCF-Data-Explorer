@@ -9,7 +9,6 @@ from shiny import ui, render, reactive
 import json
 import networkx as nx
 import matplotlib.pyplot as plt
-from io import StringIO
 
 def layout():
     return ui.page_fluid(

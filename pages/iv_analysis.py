@@ -47,7 +47,7 @@ def server(input, output, session, db):
                 try:
                     pd.to_numeric(df[col].dropna().head(100))
                     numeric_candidates.append(col)
-                except:
+                except ValueError:
                     continue
             ui.update_selectize("iv_y_params", choices=numeric_candidates)
     

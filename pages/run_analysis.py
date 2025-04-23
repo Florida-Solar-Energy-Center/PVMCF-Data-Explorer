@@ -6,74 +6,61 @@ Created on Mon Apr 14 13:31:55 2025
 """
 
 from shiny import ui, render, reactive
-import pandas as pd
-import matplotlib.pyplot as plt
-import io
 
 def layout(db):
     return ui.page_fluid(
-        ui.h3("📈 Run Analysis Scripts"),
-        ui.input_select("analysis_type", "Choose Analysis", choices=[
-            "Module Count by Manufacturer",
-            "Average Voc by Model",
-            "Custom Script (Placeholder)"
-        ]),
-
-        ui.output_plot("analysis_plot", height="400px"),
-        ui.output_text_verbatim("analysis_summary")
+        ui.h3("🔬 Sequential EL Pair Selector"),
+        ui.input_text("el_module_id", "Enter Module ID", placeholder="e.g., FPCAL-0001"),
+        ui.input_action_button("fetch_el_pairs", "Fetch EL Pairs"),
+        ui.output_ui("el_slider_ui"),
+        ui.output_text_verbatim("selected_pair_summary")
     )
 
 def server(input, output, session, db):
+
     @reactive.Calc
-    def selected_analysis():
-        return input.analysis_type()
+    def el_pairs_dict():
+        input.fetch_el_pairs()
+        module_id = input.el_module_id()
+        if not module_id:
+            return {}
+        return db.get_el_pairs(module_id)
 
-    def load_metadata():
-        return db.read_records("module-metadata")
-
-    @output
-    @render.plot
-    def analysis_plot():
-        df = load_metadata()
-        if df is None or df.empty:
-            return
-    
-        fig, ax = plt.subplots()
-        if selected_analysis() == "Module Count by Manufacturer":
-            df["make"].value_counts().plot(kind="bar", ax=ax, title="Modules by Manufacturer")
-        elif selected_analysis() == "Average Voc by Model":
-            if "nameplate-voc" in df.columns and "model" in df.columns:
-                # Ensure numeric and drop NaNs
-                df = df[["model", "nameplate-voc"]].dropna()
-                df["nameplate-voc"] = pd.to_numeric(df["nameplate-voc"], errors="coerce")
-                df = df.dropna()
-    
-                avg_voc = df.groupby("model")["nameplate-voc"].mean().sort_values(ascending=False)
-                avg_voc.plot(kind="bar", ax=ax)
-                ax.set_title("Average Nameplate Voc by Model")
-                ax.set_ylabel("Voc (V)")
-                ax.set_xlabel("Model")
-            else:
-                ax.text(0.5, 0.5, "Required columns not found", ha="center", va="center")
-        else:
-            ax.text(0.5, 0.5, "Custom script output goes here", ha="center", va="center")
-        return fig
+    @reactive.Calc
+    def available_pair_dates():
+        data = el_pairs_dict()
+        if not isinstance(data, dict) or "message" in data or "error" in data:
+            return []
+        return sorted(data.keys())  # Sort the dictionary keys (dates)
 
     @output
+    @render.ui
+    def el_slider_ui():
+        dates = available_pair_dates()
+        if not dates:
+            return ui.p("No EL pairs found.")
+        return ui.input_select("el_pair_date", "Select EL Pair by Date", choices=dates)
+
+    @reactive.Calc
+    def selected_el_pair():
+        data = el_pairs_dict()
+        selected_date = input.el_pair_date()
+        if not selected_date or selected_date not in data:
+            return None
+        return data[selected_date]
+
     @render.text
-    def analysis_summary():
-        df = load_metadata()
-        if df is None or df.empty:
-            return "No data available."
-    
-        if selected_analysis() == "Module Count by Manufacturer":
-            return df["make"].value_counts().to_string()
-        elif selected_analysis() == "Average Voc by Model":
-            if "nameplate-voc" in df.columns and "model" in df.columns:
-                df = df[["model", "nameplate-voc"]].dropna()
-                df["nameplate-voc"] = pd.to_numeric(df["nameplate-voc"], errors="coerce")
-                df = df.dropna()
-                return df.groupby("model")["nameplate-voc"].mean().sort_values(ascending=False).round(2).to_string()
-            return "Required columns not found."
-        
-        return "Custom script execution results will be shown here."
+    def selected_pair_summary():
+        pair = selected_el_pair()
+        if pair is None:
+            return "No EL pair selected."
+        first = pair["tenth_isc"]
+        second = pair["one_isc"]
+        return (
+            f"Date: {first['date']} | "
+            f"0.1*Isc ID: {first['ID']} Current: {first['current']} | "
+            f"Isc ID: {second['ID']} Current: {second['current']}"
+        )
+
+    return selected_el_pair
+

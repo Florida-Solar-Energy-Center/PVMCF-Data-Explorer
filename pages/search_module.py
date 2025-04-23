@@ -1,6 +1,6 @@
 from shiny import ui, render, reactive
 import pandas as pd
-import io
+import traceback
 import zipfile
 import tempfile
 import os
@@ -54,15 +54,20 @@ def server(input, output, session, db):
                 else:
                     quoted = ', '.join(f"'{v}'" for v in values)
                     query = f'WHERE "{column}" IN ({quoted})'
-                return db.read_records(table_name, '*', query)
+                df = db.read_records(table_name, '*', query)
+                db.logger.info(f"{table_name}: Retrieved {len(df)} records for {column} in {values}")
+                return df
             except Exception as e:
-                db.handle_error(e, f"Querying {table_name} for {column} in {values}")
+                db.logger.error(
+                    f"Failed to query {table_name} with {column} in {values}\n{traceback.format_exc()} {e}"
+                )
                 return pd.DataFrame()
         return pd.DataFrame()
 
     @output
     @render.download(filename="all_results.zip")
     def download_all():
+        db.logger.info("Download triggered for all_results.zip")
         with tempfile.TemporaryDirectory() as tmpdir:
             files = {
                 "iv_results.csv": query_table("sinton-iv-metadata"),
@@ -73,36 +78,45 @@ def server(input, output, session, db):
                 "scanner_results.csv": query_table("scanner-nc-metadata"),
                 "status_results.csv": query_table("module-status"),
             }
-
+    
             metadata_df = query_table("module-metadata")
-
-            # Write all CSVs
             zip_path = os.path.join(tmpdir, "all_results.zip")
-            with zipfile.ZipFile(zip_path, "w") as zipf:
-                for name, df in files.items():
-                    csv_path = os.path.join(tmpdir, name)
-                    df.to_csv(csv_path, index=False)
-                    zipf.write(csv_path, arcname=name)
-
-                # Generate README.txt
-                readme_lines = ["PVMCF PV Module Data Export\n======================\n"]
-                if not metadata_df.empty:
-                    for col in ["module-id", "serial-number", "technology", "manufacturer", "location"]:
-                        if col in metadata_df.columns:
-                            values = metadata_df[col].dropna().unique()
-                            readme_lines.append(f"{col}: {', '.join(map(str, values))}")
-                    readme_lines.append("")
-
-                for name, df in files.items():
-                    readme_lines.append(f"{name}: {len(df)} records")
-
-                readme_path = os.path.join(tmpdir, "README.txt")
-                with open(readme_path, "w") as f:
-                    f.write("\n".join(readme_lines))
-                zipf.write(readme_path, arcname="README.txt")
-
-            with open(zip_path, "rb") as f:
-                yield f.read()
+    
+            try:
+                with zipfile.ZipFile(zip_path, "w") as zipf:
+                    for name, df in files.items():
+                        try:
+                            csv_path = os.path.join(tmpdir, name)
+                            df.to_csv(csv_path, index=False)
+                            zipf.write(csv_path, arcname=name)
+                            db.logger.info(f"{name} written with {len(df)} records and added to ZIP.")
+                        except Exception as e:
+                            db.logger.error(f"Failed to write or zip {name}\n{traceback.format_exc()}")
+    
+                    # Generate README.txt
+                    readme_lines = ["PVMCF PV Module Data Export\n======================\n"]
+                    if not metadata_df.empty:
+                        for col in ["module-id", "serial-number", "technology", "manufacturer", "location"]:
+                            if col in metadata_df.columns:
+                                values = metadata_df[col].dropna().unique()
+                                readme_lines.append(f"{col}: {', '.join(map(str, values))}")
+                        readme_lines.append("")
+    
+                    for name, df in files.items():
+                        readme_lines.append(f"{name}: {len(df)} records")
+    
+                    readme_path = os.path.join(tmpdir, "README.txt")
+                    with open(readme_path, "w") as f:
+                        f.write("\n".join(readme_lines))
+                    zipf.write(readme_path, arcname="README.txt")
+                    db.logger.info("README.txt written and added to ZIP.")
+    
+                with open(zip_path, "rb") as f:
+                    db.logger.info("ZIP file successfully generated and sent to user.")
+                    yield f.read()
+    
+            except Exception as e:
+                db.logger.error(f"Download failed\n{traceback.format_exc()}")
 
     # Output tables (same as before)
     @output
