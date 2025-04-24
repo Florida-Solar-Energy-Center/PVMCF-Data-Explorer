@@ -77,7 +77,7 @@ class PostgresDB:
     
             # Step 2: Get EL measurements
             el_query = """
-            SELECT * FROM instrument_data.el_metadata
+            SELECT "ID", "module-id", "date", "time", "current"  FROM instrument_data.el_metadata
             WHERE "module-id" = %s
             """
             el_df = self.read_records_from_postgres(el_query, (module_id,))
